@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Certificados CESDE</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 10px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .download-btn {
+            display: inline-block;
+            background-color: #2196F3;
+            color: white;
+            padding: 12px 20px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-weight: bold;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .download-btn:hover {
+            background-color: #0b7dda;
+        }
+        
+        .loading {
+            display: none;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 4px solid #3498db;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        #certificate_preview {
+            margin-top: 30px;
+        }
+        
+        #signature_preview {
+            max-width: 200px;
+            max-height: 100px;
+            display: block;
+            margin: 10px auto;
+            border: 1px solid #ddd;
+        }
+        
+        .signature-upload {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px dashed #ccc;
+            border-radius: 4px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1><i class="fas fa-certificate"></i> Generador de Certificados Estudiantiles CESDE</h1>
+    
+    <form id="certificate_form">
+        <h2><i class="fas fa-user-graduate"></i> Datos del Estudiante</h2>
+        
+        <div class="form-group">
+            <label for="student_name">Nombre Completo</label>
+            <input type="text" id="student_name" placeholder="Ingrese el nombre completo" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="document_number">Documento de Identidad</label>
+            <input type="text" id="document_number" placeholder="Ingrese el número de documento" required>
+        </div>
+        
+        <div class="signature-upload">
+            <h3><i class="fas fa-signature"></i> Firma del Jefe</h3>
+            <input type="file" id="signature_upload" accept="image/*" style="display: none;">
+            <button type="button" id="upload_btn" style="background-color: #ff9800;">
+                <i class="fas fa-upload"></i> Seleccionar Firma
+            </button>
+            <img id="signature_preview" class="hidden">
+            <button type="button" id="remove_signature_btn" class="hidden" style="background-color: #f44336;">
+                <i class="fas fa-trash"></i> Eliminar Firma
+            </button>
+        </div>
+        
+        <button type="button" id="generate_btn">
+            <i class="fas fa-file-pdf"></i> Generar Certificado PDF
+        </button>
+    </form>
+    
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Generando certificado...</p>
+    </div>
+    
+    <div id="certificate_preview" class="hidden">
+        <h2><i class="fas fa-eye"></i> Vista Previa del Certificado</h2>
+        <iframe id="pdf_preview" width="100%" height="600px" style="border:1px solid #ddd;"></iframe>
+        <a id="download_pdf" class="download-btn">
+            <i class="fas fa-download"></i> Descargar Certificado PDF
+        </a>
+    </div>
+    
+    <!-- Incluir jsPDF y html2canvas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const { jsPDF } = window.jspdf;
+            const generateBtn = document.getElementById('generate_btn');
+            const loading = document.getElementById('loading');
+            const certificatePreview = document.getElementById('certificate_preview');
+            const pdfPreview = document.getElementById('pdf_preview');
+            const downloadPdfBtn = document.getElementById('download_pdf');
+            const uploadBtn = document.getElementById('upload_btn');
+            const signatureUpload = document.getElementById('signature_upload');
+            const signaturePreview = document.getElementById('signature_preview');
+            const removeSignatureBtn = document.getElementById('remove_signature_btn');
+            
+            let signatureDataUrl = '';
+            
+            // Manejar la carga de la firma
+            uploadBtn.addEventListener('click', function() {
+                signatureUpload.click();
+            });
+            
+            signatureUpload.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        signatureDataUrl = event.target.result;
+                        signaturePreview.src = signatureDataUrl;
+                        signaturePreview.classList.remove('hidden');
+                        removeSignatureBtn.classList.remove('hidden');
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            
+            // Manejar la eliminación de la firma
+            removeSignatureBtn.addEventListener('click', function() {
+                signatureDataUrl = '';
+                signaturePreview.src = '';
+                signaturePreview.classList.add('hidden');
+                removeSignatureBtn.classList.add('hidden');
+                signatureUpload.value = '';
+            });
+            
+            generateBtn.addEventListener('click', function() {
+                generateCertificate();
+            });
+            
+            async function generateCertificate() {
+                // Validar campos requeridos
+                if (!document.getElementById('student_name').value || !document.getElementById('document_number').value) {
+                    alert('Por favor complete todos los campos requeridos');
+                    return;
+                }
+                
+                // Mostrar carga
+                loading.style.display = 'block';
+                generateBtn.disabled = true;
+                
+                try {
+                    // Obtener datos del formulario
+                    const certificateData = getFormData();
+                    
+                    // Crear HTML del certificado
+                    const certificateHTML = createCertificateHTML(certificateData);
+                    
+                    // Crear elemento temporal para renderizar
+                    const tempDiv = document.createElement('div');
+                    tempDiv.style.position = 'absolute';
+                    tempDiv.style.left = '-9999px';
+                    tempDiv.style.width = '794px'; // A4 width in pixels (210mm)
+                    tempDiv.style.padding = '20px';
+                    tempDiv.style.fontFamily = 'Arial';
+                    tempDiv.innerHTML = certificateHTML;
+                    document.body.appendChild(tempDiv);
+                    
+                    // Generar PDF
+                    const pdf = new jsPDF({
+                        orientation: 'portrait',
+                        unit: 'mm',
+                        format: 'a4'
+                    });
+                    
+                    // Usar html2canvas para capturar el HTML
+                    const canvas = await html2canvas(tempDiv, {
+                        scale: 2,
+                        logging: false,
+                        useCORS: true,
+                        allowTaint: true
+                    });
+                    
+                    // Eliminar elemento temporal
+                    document.body.removeChild(tempDiv);
+                    
+                    // Agregar imagen al PDF
+                    const imgData = canvas.toDataURL('image/png');
+                    const imgWidth = 210; // A4 width in mm
+                    const imgHeight = canvas.height * imgWidth / canvas.width;
+                    
+                    pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+                    
+                    // Mostrar vista previa
+                    const pdfUrl = URL.createObjectURL(pdf.output('blob'));
+                    pdfPreview.src = pdfUrl;
+                    
+                    // Configurar botón de descarga
+                    downloadPdfBtn.onclick = function() {
+                        pdf.save(`Certificado_${certificateData.student_name.replace(/ /g, '_')}.pdf`);
+                    };
+                    
+                    // Mostrar vista previa
+                    certificatePreview.classList.remove('hidden');
+                    loading.style.display = 'none';
+                    generateBtn.disabled = false;
+                    
+                } catch (error) {
+                    console.error('Error al generar el PDF:', error);
+                    alert('Ocurrió un error al generar el certificado. Por favor intente nuevamente.');
+                    loading.style.display = 'none';
+                    generateBtn.disabled = false;
+                }
+            }
+            
+            function getFormData() {
+                const currentDate = new Date();
+                
+                const months_es = {
+                    1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
+                    5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
+                    9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"
+                };
+                
+                // Valores predefinidos
+                return {
+                    student_name: document.getElementById('student_name').value,
+                    document_number: document.getElementById('document_number').value,
+                    program_name: "Técnico Laboral por Competencias en Auxiliar en Desarrollo de Aplicaciones Informáticas",
+                    module_number: "primero",
+                    total_modules: "3",
+                    hours: "255",
+                    total_hours: "694",
+                    period: "1-2025",
+                    start_date: "10 de febrero de 2025",
+                    end_date: "21 de junio de 2025",
+                    current_date: `${currentDate.getDate()} de ${months_es[currentDate.getMonth() + 1]} de ${currentDate.getFullYear()}`,
+                    institution_name: "CESDE",
+                    institution_short_name: "CESDE",
+                    municipio: "La Pintada",
+                    license_number: "2020060127237",
+                    license_date: "2020-12-02",
+                    resolution_number: "2021060010827",
+                    resolution_date: "2021-05-20",
+                    nit: "890.913.319-1",
+                    location: "La Pintada",
+                    signature_name: "SANDRA MILENA BÉTANCUR DEOSSA",
+                    signature_id: "1.128.385.408",
+                    contact_person: "Luisa D.",
+                    contact_phone: "(604) 480 88 22 ext. 2301",
+                    institution_url: "Cesde.edu.co",
+                    institution_address: "Kilómetro 2 vía Puente Iglesias",
+                    institution_location: "Colombia - Antioquia – La Pintada",
+                    signature_img: signatureDataUrl || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='100' viewBox='0 0 200 100'%3E%3Crect width='200' height='100' fill='%23f5f5f5'/%3E%3Ctext x='100' y='50' font-family='Arial' font-size='14' fill='%23666' text-anchor='middle'%3EFirma no cargada%3C/text%3E%3C/svg%3E"
+                };
+            }
+            
+            function createCertificateHTML(data) {
+                return `
+                <div style="width:100%; font-family:Arial; padding:20px; box-sizing:border-box;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                        <div style="flex:1;"></div>
+                        <img src="https://deepseek-api-files.obs.cn-east-3.myhuaweicloud.com/raw/2025/03/29/file-f099bef2-63d2-44bc-8ea9-449ff46e1cef?response-content-disposition=attachment%3B+filename%3D%22cesde.png%22&AccessKeyId=OD83TSXECLFQNNSZ3IF6&Expires=1743344331&Signature=FWDOoG1qBSwjM5UDVC66Ljx3iAE%3D" 
+                             alt="Logo CESDE" 
+                             style="height:80px; margin-left:20px;">
+                    </div>
+                    
+                    <div style="text-align:center; margin-bottom:30px; border-bottom:2px solid #333; padding-bottom:10px;">
+                        <h1 style="font-size:18pt; margin-bottom:10px; text-transform:uppercase;">REGISTRO Y CONTROL ${data.institution_short_name}</h1>
+                        <p style="font-size:10pt; margin:5px 0; line-height:1.3;">LICENCIA DE FUNCIONAMIENTO DE LA SECRETARÍA DE EDUCACIÓN</p>
+                        <p style="font-size:10pt; margin:5px 0; line-height:1.3;">DEL MUNICIPIO DE ${data.municipio} ${data.license_number} DE ${data.license_date}</p>
+                        <p style="font-size:10pt; margin:5px 0; line-height:1.3;">RESOLUCIÓN OFICIAL DEL PROGRAMA ${data.resolution_number} DE ${data.resolution_date}</p>
+                        <p style="font-size:10pt; margin:5px 0; line-height:1.3;">NIT. ${data.nit}</p>
+                        <p style="font-size:10pt; margin:5px 0; line-height:1.3;">${data.location}, ${data.current_date}</p>
+                    </div>
+                    
+                    <div style="margin:20px 0;">
+                        <p style="font-size:11pt; margin-bottom:15px;"><strong>LA JEFE DE REGISTRO Y CONTROL</strong></p>
+                        <p style="font-size:11pt; margin-bottom:15px;"><strong>CERTIFICA:</strong></p>
+                        
+                        <p style="font-size:11pt; text-align:justify; line-height:1.5; margin-bottom:15px;">
+                            Que <strong>${data.student_name}</strong>, identificado con documento número 
+                            <strong>${data.document_number}</strong>, para el período <strong>${data.period}</strong> se encuentra cursando 
+                            el <strong>${data.module_number} de ${data.total_modules}</strong> módulos académicos, correspondientes al programa 
+                            <strong>${data.program_name}</strong>, con una intensidad del período de <strong>${data.hours} horas</strong> 
+                            teórico-prácticas para un total del programa de <strong>${data.total_hours} horas</strong>.
+                        </p>
+                        
+                        <p style="font-size:11pt; text-align:justify; line-height:1.5; margin-bottom:15px;">
+                            La fecha de inicio para el semestre <strong>${data.period}</strong> pactada por la Institución es para el 
+                            <strong>${data.start_date}</strong> y la fecha de finalización del semestre es para el <strong>${data.end_date}</strong>.
+                        </p>
+                        
+                        <p style="font-size:10pt; font-style:italic; margin:20px 0;">
+                            De acuerdo con la Ley 115 de 1994 y el Decreto 1075 de 2015, ${data.institution_name} es una Institución
+                            de Educación para el Trabajo y el Desarrollo Humano.
+                        </p>
+                        
+                        <p style="font-size:10pt; text-align:right; margin-top:30px;">
+                            Este certificado se expide por Solicitud del Interesado.
+                        </p>
+                    </div>
+                    
+                    <div style="margin-top:40px; display:flex; justify-content:flex-end;">
+                        <div style="text-align:center; width:8cm;">
+                            <img src="${data.signature_img}" 
+                                 alt="Firma Jefe de Registro y Control" 
+                                 style="height:80px; margin-bottom:10px;">
+                            <div style="border-top:1px solid #000; padding-top:15px; margin-top:10px; font-weight:bold;">
+                                ${data.signature_name}
+                            </div>
+                            <p>Jefe de Registro y Control</p>
+                            <p>C.C. ${data.signature_id}</p>
+                        </div>
+                    </div>
+                    
+                    <div style="font-size:9pt; text-align:center; margin-top:40px; color:#555; line-height:1.4;">
+                        <p>${data.contact_person} ${data.contact_phone}</p>
+                        <p>${data.institution_url}</p>
+                        <p>${data.institution_address}</p>
+                        <p>${data.institution_location}</p>
+                    </div>
+                </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
